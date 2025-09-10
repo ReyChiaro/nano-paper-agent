@@ -3,8 +3,8 @@
 import os
 from utils.config import config
 from utils.logger import logger
-from database.db_manager import DBManager  # Import the new DBManager
-import numpy as np  # For testing embeddings
+from database.db_manager import DBManager
+import numpy as np
 
 
 def main():
@@ -117,14 +117,14 @@ def main():
                 f"  - {sec['section_title']} (Page: {sec['page_number']}), Embedding shape: {sec['embedding'].shape if sec['embedding'] is not None else 'None'}"
             )
 
-        # 9. Add references
+        # 9. Add paper references (used to be add_reference)
         if paper_id_1:
             db_manager.add_paper_reference(paper_id_1, "Related Work A", "Author A", 2020, "10.0000/ref.A")
             db_manager.add_paper_reference(
                 paper_id_1, "Related Work B", "Author B, Author C", 2019, is_in_library=True
             )  # Assume this one is in library
 
-        # 10. Get references for a paper
+        # 10. Get paper references for a paper (used to be get_references_for_paper)
         paper1_references = db_manager.get_paper_references_for_paper(paper_id_1)
         logger.info(f"References for Paper 1 (ID: {paper_id_1}):")
         for ref in paper1_references:
@@ -154,11 +154,13 @@ def main():
             else:
                 logger.error(f"Paper 2 (ID: {paper_id_2}) still exists after deletion attempt.")
 
-            # Check if associated sections/tags were also deleted
+            # Check if associated sections/tags/references were also deleted
             paper2_sections_after_delete = db_manager.get_sections_for_paper(paper_id_2)
             paper2_tags_after_delete = db_manager.get_tags_for_paper(paper_id_2)
+            paper2_references_after_delete = db_manager.get_paper_references_for_paper(paper_id_2)  # Check references too
             logger.info(f"Sections for Paper 2 after delete: {len(paper2_sections_after_delete)}")
             logger.info(f"Tags for Paper 2 after delete: {len(paper2_tags_after_delete)}")
+            logger.info(f"References for Paper 2 after delete: {len(paper2_references_after_delete)}")
 
     except Exception as e:
         logger.critical(f"An error occurred during DBManager initialization or testing: {e}", exc_info=True)

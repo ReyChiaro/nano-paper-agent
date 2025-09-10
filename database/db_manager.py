@@ -4,7 +4,7 @@ import sqlite3
 import os
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-import numpy as np  # For handling embeddings
+import numpy as np
 
 from utils.config import config
 from utils.logger import logger
@@ -322,7 +322,7 @@ class DBManager:
             return True
         return False
 
-    # --- Reference Operations ---
+    # --- Paper Reference Operations ---
 
     def add_paper_reference(
         self,
@@ -335,8 +335,8 @@ class DBManager:
         is_in_library: bool = False,
     ) -> Optional[int]:
         """
-        Adds a paper reference cited by a paper.
-        Returns the ID of the newly added paper reference, or None if failed.
+        Adds a reference cited by a paper.
+        Returns the ID of the newly added reference, or None if failed.
         """
         query = """
         INSERT INTO paper_references (citing_paper_id, cited_title, cited_authors, cited_year, cited_doi, cited_url, is_in_library)
@@ -345,7 +345,7 @@ class DBManager:
         params = (citing_paper_id, cited_title, cited_authors, cited_year, cited_doi, cited_url, 1 if is_in_library else 0)
         ref_id = self._execute_update(query, params)
         if ref_id:
-            logger.debug(f"Added paper_reference for paper {citing_paper_id}: '{cited_title}' (ID: {ref_id})")
+            logger.debug(f"Added reference for paper {citing_paper_id}: '{cited_title}' (ID: {ref_id})")
         return ref_id
 
     def get_paper_references_for_paper(self, citing_paper_id: int) -> List[Dict[str, Any]]:
@@ -358,15 +358,17 @@ class DBManager:
 
     def update_paper_reference_in_library_status(self, ref_id: int, is_in_library: bool) -> bool:
         """
-        Updates the 'is_in_library' status for a specific paper_reference.
+        Updates the 'is_in_library' status for a specific reference.
         Returns True on success, False otherwise.
         """
         query = "UPDATE paper_references SET is_in_library = ? WHERE id = ?"
         rows_affected = self._execute_update(query, (1 if is_in_library else 0, ref_id))
         if rows_affected == 1:
-            logger.info(f"Updated is_in_library status for paper_reference ID: {ref_id} to {is_in_library}")
+            logger.info(f"Updated is_in_library status for paper reference ID: {ref_id} to {is_in_library}")
             return True
-        logger.warning(f"Failed to update is_in_library status for paper_reference ID: {ref_id}. Rows affected: {rows_affected}")
+        logger.warning(
+            f"Failed to update is_in_library status for paper reference ID: {ref_id}. Rows affected: {rows_affected}"
+        )
         return False
 
     def get_papers_by_tag(self, tag_name: str) -> List[Dict[str, Any]]:
