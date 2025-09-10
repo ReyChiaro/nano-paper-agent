@@ -1,0 +1,12 @@
+{
+    "DATA_DIR": "/Users/mecreative/Documents/projects/paper_agent/data",
+    "PAPERS_DIR": "/Users/mecreative/Documents/projects/paper_agent/data/papers",
+    "DB_DIR": "/Users/mecreative/Documents/projects/paper_agent/data/db",
+    "DATABASE_NAME": "paper_agent.db",
+    "EMBEDDING_MODEL_NAME": "sentence-transformers/all-MiniLM-L6-v2",
+    "LLM_API_KEY": "YOUR_OPENAI_API_KEY_OR_OTHER_LLM_KEY",
+    "LLM_MODEL_NAME": "gpt-4o-mini",
+    "LOG_LEVEL": "INFO",
+    "LOG_FILE": "/Users/mecreative/Documents/projects/paper_agent/paper_agent.log",
+    "TEST_KEY": "test_value"
+}

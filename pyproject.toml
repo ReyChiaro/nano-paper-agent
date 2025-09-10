@@ -1,0 +1,7 @@
+[project]
+name = "paper-agent"
+version = "0.1.0"
+description = "AI based Paper Agent with multiple functions."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
