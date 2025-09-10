@@ -4,16 +4,18 @@ import sqlite3
 import os
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-import numpy as np # For handling embeddings
+import numpy as np  # For handling embeddings
 
 from utils.config import config
 from utils.logger import logger
+
 
 class DBManager:
     """
     Manages all database interactions for the Paper Agent.
     Uses SQLite and handles connection, schema creation, and CRUD operations.
     """
+
     def __init__(self):
         db_dir = config.get("DB_DIR")
         db_name = config.get("DATABASE_NAME")
@@ -30,7 +32,7 @@ class DBManager:
             conn = self.get_connection()
             cursor = conn.cursor()
             schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
-            with open(schema_path, 'r') as f:
+            with open(schema_path, "r") as f:
                 schema_sql = f.read()
             cursor.executescript(schema_sql)
             conn.commit()
@@ -46,7 +48,7 @@ class DBManager:
         """
         try:
             conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row # Allows accessing columns by name
+            conn.row_factory = sqlite3.Row  # Allows accessing columns by name
             return conn
         except sqlite3.Error as e:
             logger.error(f"Error connecting to database: {e}")
@@ -93,7 +95,7 @@ class DBManager:
             return cursor.rowcount
         except sqlite3.IntegrityError as e:
             logger.warning(f"Database integrity error: {e}. Query: {query} with params {params}")
-            return None # Indicate failure due to integrity constraint
+            return None  # Indicate failure due to integrity constraint
         except sqlite3.Error as e:
             logger.error(f"Database update failed: {query} with params {params}. Error: {e}")
             return None
@@ -102,19 +104,21 @@ class DBManager:
 
     # --- Paper Operations ---
 
-    def add_paper(self,
-                  title: str,
-                  file_path: str,
-                  authors: Optional[str] = None,
-                  publication_year: Optional[int] = None,
-                  abstract: Optional[str] = None,
-                  doi: Optional[str] = None,
-                  url: Optional[str] = None) -> Optional[int]:
+    def add_paper(
+        self,
+        title: str,
+        file_path: str,
+        authors: Optional[str] = None,
+        publication_year: Optional[int] = None,
+        abstract: Optional[str] = None,
+        doi: Optional[str] = None,
+        url: Optional[str] = None,
+    ) -> Optional[int]:
         """
         Adds a new paper to the database.
         Returns the ID of the newly added paper, or None if failed.
         """
-        added_date = datetime.now().isoformat(sep=' ', timespec='seconds')
+        added_date = datetime.now().isoformat(sep=" ", timespec="seconds")
         query = """
         INSERT INTO papers (title, authors, publication_year, abstract, file_path, added_date, doi, url)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -166,7 +170,7 @@ class DBManager:
 
     def delete_paper(self, paper_id: int) -> bool:
         """
-        Deletes a paper and all its associated data (tags, sections, references)
+        Deletes a paper and all its associated data (tags, sections, paper_references)
         due to CASCADE DELETE constraints.
         Returns True on success, False otherwise.
         """
@@ -188,7 +192,7 @@ class DBManager:
         # Check if tag already exists
         existing_tag = self.get_tag_by_name(name)
         if existing_tag:
-            return existing_tag['id']
+            return existing_tag["id"]
 
         query = "INSERT INTO tags (name) VALUES (?)"
         tag_id = self._execute_update(query, (name,))
@@ -219,7 +223,7 @@ class DBManager:
         """
         query = "INSERT OR IGNORE INTO paper_tags (paper_id, tag_id) VALUES (?, ?)"
         rows_affected = self._execute_update(query, (paper_id, tag_id))
-        if rows_affected is not None: # It can be 0 if already exists, which is not an error
+        if rows_affected is not None:  # It can be 0 if already exists, which is not an error
             if rows_affected == 1:
                 logger.info(f"Associated paper {paper_id} with tag {tag_id}")
             return True
@@ -254,8 +258,14 @@ class DBManager:
 
     # --- Section Operations ---
 
-    def add_section(self, paper_id: int, section_title: str, content: str,
-                    page_number: Optional[int] = None, embedding: Optional[np.ndarray] = None) -> Optional[int]:
+    def add_section(
+        self,
+        paper_id: int,
+        section_title: str,
+        content: str,
+        page_number: Optional[int] = None,
+        embedding: Optional[np.ndarray] = None,
+    ) -> Optional[int]:
         """
         Adds a parsed section of a paper.
         Embedding is stored as BLOB.
@@ -279,8 +289,10 @@ class DBManager:
         if results:
             for row in results:
                 section_data = dict(row)
-                if section_data['embedding']:
-                    section_data['embedding'] = np.frombuffer(section_data['embedding'], dtype=np.float32) # Assuming float32
+                if section_data["embedding"]:
+                    section_data["embedding"] = np.frombuffer(
+                        section_data["embedding"], dtype=np.float32
+                    )  # Assuming float32
                 sections.append(section_data)
         return sections
 
@@ -293,8 +305,8 @@ class DBManager:
         result = self._execute_query(query, (section_id,))
         if result:
             section_data = dict(result[0])
-            if section_data['embedding']:
-                section_data['embedding'] = np.frombuffer(section_data['embedding'], dtype=np.float32)
+            if section_data["embedding"]:
+                section_data["embedding"] = np.frombuffer(section_data["embedding"], dtype=np.float32)
             return section_data
         return None
 
@@ -312,48 +324,49 @@ class DBManager:
 
     # --- Reference Operations ---
 
-    def add_reference(self,
-                      citing_paper_id: int,
-                      cited_title: Optional[str] = None,
-                      cited_authors: Optional[str] = None,
-                      cited_year: Optional[int] = None,
-                      cited_doi: Optional[str] = None,
-                      cited_url: Optional[str] = None,
-                      is_in_library: bool = False
-                      ) -> Optional[int]:
+    def add_paper_reference(
+        self,
+        citing_paper_id: int,
+        cited_title: Optional[str] = None,
+        cited_authors: Optional[str] = None,
+        cited_year: Optional[int] = None,
+        cited_doi: Optional[str] = None,
+        cited_url: Optional[str] = None,
+        is_in_library: bool = False,
+    ) -> Optional[int]:
         """
-        Adds a reference cited by a paper.
-        Returns the ID of the newly added reference, or None if failed.
+        Adds a paper reference cited by a paper.
+        Returns the ID of the newly added paper reference, or None if failed.
         """
         query = """
-        INSERT INTO references (citing_paper_id, cited_title, cited_authors, cited_year, cited_doi, cited_url, is_in_library)
+        INSERT INTO paper_references (citing_paper_id, cited_title, cited_authors, cited_year, cited_doi, cited_url, is_in_library)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """
         params = (citing_paper_id, cited_title, cited_authors, cited_year, cited_doi, cited_url, 1 if is_in_library else 0)
         ref_id = self._execute_update(query, params)
         if ref_id:
-            logger.debug(f"Added reference for paper {citing_paper_id}: '{cited_title}' (ID: {ref_id})")
+            logger.debug(f"Added paper_reference for paper {citing_paper_id}: '{cited_title}' (ID: {ref_id})")
         return ref_id
 
-    def get_references_for_paper(self, citing_paper_id: int) -> List[Dict[str, Any]]:
+    def get_paper_references_for_paper(self, citing_paper_id: int) -> List[Dict[str, Any]]:
         """
         Retrieves all references cited by a specific paper.
         """
-        query = "SELECT * FROM references WHERE citing_paper_id = ? ORDER BY cited_title ASC"
+        query = "SELECT * FROM paper_references WHERE citing_paper_id = ? ORDER BY cited_title ASC"
         results = self._execute_query(query, (citing_paper_id,))
         return [dict(row) for row in results] if results else []
 
-    def update_reference_in_library_status(self, ref_id: int, is_in_library: bool) -> bool:
+    def update_paper_reference_in_library_status(self, ref_id: int, is_in_library: bool) -> bool:
         """
-        Updates the 'is_in_library' status for a specific reference.
+        Updates the 'is_in_library' status for a specific paper_reference.
         Returns True on success, False otherwise.
         """
-        query = "UPDATE references SET is_in_library = ? WHERE id = ?"
+        query = "UPDATE paper_references SET is_in_library = ? WHERE id = ?"
         rows_affected = self._execute_update(query, (1 if is_in_library else 0, ref_id))
         if rows_affected == 1:
-            logger.info(f"Updated is_in_library status for reference ID: {ref_id} to {is_in_library}")
+            logger.info(f"Updated is_in_library status for paper_reference ID: {ref_id} to {is_in_library}")
             return True
-        logger.warning(f"Failed to update is_in_library status for reference ID: {ref_id}. Rows affected: {rows_affected}")
+        logger.warning(f"Failed to update is_in_library status for paper_reference ID: {ref_id}. Rows affected: {rows_affected}")
         return False
 
     def get_papers_by_tag(self, tag_name: str) -> List[Dict[str, Any]]:
@@ -370,4 +383,3 @@ class DBManager:
         """
         results = self._execute_query(query, (tag_name,))
         return [dict(row) for row in results] if results else []
-

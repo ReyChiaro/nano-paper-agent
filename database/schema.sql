@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS sections (
 );
 
 -- Table to store references cited within a paper
-CREATE TABLE IF NOT EXISTS references (
+CREATE TABLE IF NOT EXISTS paper_references (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     citing_paper_id INTEGER NOT NULL, -- The paper that contains this reference
     cited_title TEXT,
