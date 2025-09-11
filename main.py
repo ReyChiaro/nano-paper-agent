@@ -4,7 +4,9 @@ import os
 from utils.config import config
 from utils.logger import logger
 from database.db_manager import DBManager
-import numpy as np
+from parsers.pdf_parser import PDFParser  # Import the new PDFParser
+import numpy as np  # For testing embeddings
+import sys  # For exiting if no test PDF
 
 
 def main():
@@ -28,142 +30,139 @@ def main():
     try:
         db_manager = DBManager()
         logger.info("DBManager initialized successfully.")
-
-        # --- Basic DBManager Test ---
-        logger.info("\n--- Testing DBManager operations ---")
-
-        # 1. Add a paper
-        paper_id_1 = db_manager.add_paper(
-            title="A Novel Approach to Paper Management",
-            authors="John Doe, Jane Smith",
-            publication_year=2023,
-            abstract="This paper introduces a revolutionary system...",
-            file_path="/path/to/paper1.pdf",
-            doi="10.1234/paper.2023.1",
-        )
-        if paper_id_1:
-            logger.info(f"Test Paper 1 added with ID: {paper_id_1}")
-        else:
-            logger.error("Failed to add Test Paper 1.")
-
-        paper_id_2 = db_manager.add_paper(
-            title="AI for Research Productivity",
-            authors="Alice Wonderland",
-            publication_year=2024,
-            abstract="Exploring how AI can boost research workflow.",
-            file_path="/path/to/paper2.pdf",
-            url="http://example.com/paper2",
-        )
-        if paper_id_2:
-            logger.info(f"Test Paper 2 added with ID: {paper_id_2}")
-        else:
-            logger.error("Failed to add Test Paper 2.")
-
-        # Try adding paper with same unique file_path (should fail for file_path)
-        paper_id_fail = db_manager.add_paper(
-            title="Duplicate Paper Attempt", file_path="/path/to/paper1.pdf"  # Duplicate file path
-        )
-        if paper_id_fail is None:
-            logger.info("Attempt to add duplicate paper (same file_path) correctly failed.")
-        else:
-            logger.error(f"Duplicate paper was added with ID: {paper_id_fail}. This is an error.")
-
-        # 2. Get paper by ID
-        retrieved_paper = db_manager.get_paper(paper_id_1)
-        if retrieved_paper:
-            logger.info(f"Retrieved Paper 1: {retrieved_paper['title']} by {retrieved_paper['authors']}")
-        else:
-            logger.warning(f"Paper with ID {paper_id_1} not found.")
-
-        # 3. Add tags
-        tag_nlp_id = db_manager.add_tag("NLP")
-        tag_rag_id = db_manager.add_tag("RAG")
-        tag_ai_id = db_manager.add_tag("AI")
-        logger.info(f"Tags added: NLP ID={tag_nlp_id}, RAG ID={tag_rag_id}, AI ID={tag_ai_id}")
-
-        # 4. Associate tags with papers
-        if paper_id_1 and tag_nlp_id:
-            db_manager.add_paper_tag(paper_id_1, tag_nlp_id)
-        if paper_id_1 and tag_rag_id:
-            db_manager.add_paper_tag(paper_id_1, tag_rag_id)
-        if paper_id_2 and tag_ai_id:
-            db_manager.add_paper_tag(paper_id_2, tag_ai_id)
-        if paper_id_2 and tag_rag_id:
-            db_manager.add_paper_tag(paper_id_2, tag_rag_id)  # Paper 2 also has RAG
-
-        # 5. Get tags for a paper
-        paper1_tags = db_manager.get_tags_for_paper(paper_id_1)
-        logger.info(f"Tags for Paper 1 (ID: {paper_id_1}): {[t['name'] for t in paper1_tags]}")
-        paper2_tags = db_manager.get_tags_for_paper(paper_id_2)
-        logger.info(f"Tags for Paper 2 (ID: {paper_id_2}): {[t['name'] for t in paper2_tags]}")
-
-        # 6. Get papers by tag
-        rag_papers = db_manager.get_papers_by_tag("RAG")
-        logger.info(f"Papers tagged 'RAG': {[p['title'] for p in rag_papers]}")
-
-        # 7. Add sections with dummy embeddings
-        dummy_embedding_1 = np.random.rand(768).astype(np.float32)  # Example embedding vector
-        dummy_embedding_2 = np.random.rand(768).astype(np.float32)
-
-        if paper_id_1:
-            db_manager.add_section(paper_id_1, "Introduction", "This is the intro content.", 1, dummy_embedding_1)
-            db_manager.add_section(paper_id_1, "Methodology", "Details of the method.", 3, dummy_embedding_2)
-
-        # 8. Get sections for a paper
-        paper1_sections = db_manager.get_sections_for_paper(paper_id_1)
-        logger.info(f"Sections for Paper 1 (ID: {paper_id_1}):")
-        for sec in paper1_sections:
-            logger.info(
-                f"  - {sec['section_title']} (Page: {sec['page_number']}), Embedding shape: {sec['embedding'].shape if sec['embedding'] is not None else 'None'}"
-            )
-
-        # 9. Add paper references (used to be add_reference)
-        if paper_id_1:
-            db_manager.add_paper_reference(paper_id_1, "Related Work A", "Author A", 2020, "10.0000/ref.A")
-            db_manager.add_paper_reference(
-                paper_id_1, "Related Work B", "Author B, Author C", 2019, is_in_library=True
-            )  # Assume this one is in library
-
-        # 10. Get paper references for a paper (used to be get_references_for_paper)
-        paper1_references = db_manager.get_paper_references_for_paper(paper_id_1)
-        logger.info(f"References for Paper 1 (ID: {paper_id_1}):")
-        for ref in paper1_references:
-            logger.info(f"  - {ref['cited_title']} ({ref['cited_year']}), In Library: {bool(ref['is_in_library'])}")
-
-        # 11. Update summary
-        if paper_id_1:
-            db_manager.update_paper_summary(paper_id_1, "This is a concise summary of Paper 1, generated by the agent.")
-            updated_paper = db_manager.get_paper(paper_id_1)
-            logger.info(
-                f"Paper 1 summary status: is_summarized={bool(updated_paper['is_summarized'])}, summary_text='{updated_paper['summary_text'][:50]}...'"
-            )
-
-        # 12. Get all papers
-        all_papers = db_manager.get_all_papers()
-        logger.info(f"\nAll Papers in DB ({len(all_papers)} total):")
-        for p in all_papers:
-            logger.info(f"  - {p['title']} (ID: {p['id']})")
-
-        # 13. Delete a paper (and observe cascade delete)
-        if paper_id_2:
-            logger.info(f"\nAttempting to delete Paper 2 (ID: {paper_id_2})...")
-            db_manager.delete_paper(paper_id_2)
-            deleted_paper = db_manager.get_paper(paper_id_2)
-            if not deleted_paper:
-                logger.info(f"Paper 2 (ID: {paper_id_2}) successfully deleted.")
-            else:
-                logger.error(f"Paper 2 (ID: {paper_id_2}) still exists after deletion attempt.")
-
-            # Check if associated sections/tags/references were also deleted
-            paper2_sections_after_delete = db_manager.get_sections_for_paper(paper_id_2)
-            paper2_tags_after_delete = db_manager.get_tags_for_paper(paper_id_2)
-            paper2_references_after_delete = db_manager.get_paper_references_for_paper(paper_id_2)  # Check references too
-            logger.info(f"Sections for Paper 2 after delete: {len(paper2_sections_after_delete)}")
-            logger.info(f"Tags for Paper 2 after delete: {len(paper2_tags_after_delete)}")
-            logger.info(f"References for Paper 2 after delete: {len(paper2_references_after_delete)}")
-
     except Exception as e:
-        logger.critical(f"An error occurred during DBManager initialization or testing: {e}", exc_info=True)
+        logger.critical(f"Failed to initialize DBManager: {e}", exc_info=True)
+        sys.exit("Application startup failed due to database error.")
+
+    # --- Initialize PDFParser ---
+    pdf_parser = PDFParser()
+    logger.info("PDFParser initialized successfully.")
+
+    # --- Prepare a dummy PDF for testing ---
+    test_pdf_name = "test_paper.pdf"
+    test_pdf_path = os.path.join(papers_dir, test_pdf_name)
+    if not os.path.exists(test_pdf_path):
+        logger.error(f"Test PDF not found at {test_pdf_path}. Please place a dummy PDF there to proceed.")
+        sys.exit("Missing test PDF. Cannot proceed with parser testing.")
+
+    # --- Basic DBManager and PDFParser Test ---
+    logger.info("\n--- Testing DBManager and PDFParser operations ---")
+
+    # Clean up previous test data if any, for a fresh run
+    # (In a real app, you'd have proper data management, not just deleting the DB)
+    if os.path.exists(db_manager.db_path):
+        os.remove(db_manager.db_path)
+        logger.info(f"Removed existing database file: {db_manager.db_path}")
+        db_manager._initialize_db()  # Re-initialize after deletion
+
+    # 1. Add a paper (using test PDF path)
+    paper_title = "Sample Research Paper on AI"
+    paper_authors = "A. Researcher, B. Developer"
+    paper_year = 2023
+    paper_abstract = "This is a sample abstract for a research paper, demonstrating the capabilities of the PDF parser."
+
+    paper_id = db_manager.add_paper(
+        title=paper_title,
+        authors=paper_authors,
+        publication_year=paper_year,
+        abstract=paper_abstract,
+        file_path=test_pdf_path,
+        doi="10.1234/sample.2023.1",
+    )
+    if paper_id:
+        logger.info(f"Test Paper added with ID: {paper_id}")
+    else:
+        logger.error("Failed to add Test Paper.")
+        sys.exit("Failed to add paper to DB, cannot proceed.")
+
+    # 2. Extract metadata and text from the test PDF
+    logger.info(f"\n--- Parsing PDF: {test_pdf_path} ---")
+    metadata = pdf_parser.extract_metadata_from_pdf(test_pdf_path)
+    logger.info(f"Extracted Metadata: {metadata}")
+
+    # Optional: Update paper title/authors from PDF metadata if more accurate
+    # For now, we'll stick to what we manually provided in add_paper for simplicity
+    # if metadata.get('title'):
+    #     # A method to update paper metadata would be needed here
+    #     pass
+
+    full_text_content = pdf_parser.extract_text_from_pdf(test_pdf_path)
+    if full_text_content:
+        logger.info(f"Extracted {len(full_text_content)} characters of full text.")
+        # logger.debug(f"Full text (first 500 chars): {full_text_content[:500]}...")
+    else:
+        logger.warning(f"Could not extract full text from {test_pdf_path}.")
+
+    # 3. Extract sections and store them in the database
+    logger.info("\n--- Extracting and Storing Sections ---")
+    sections_data = pdf_parser.extract_sections_from_pdf(test_pdf_path, chunk_size=500, overlap=100)
+    if sections_data:
+        logger.info(f"Extracted {len(sections_data)} sections from PDF.")
+        # For testing, let's add a dummy embedding
+        dummy_embedding_dim = 768  # Standard for many sentence transformers
+        for i, section in enumerate(sections_data):
+            # Simulate embedding generation (will be real in next step)
+            dummy_embedding = np.random.rand(dummy_embedding_dim).astype(np.float32)
+            section_id = db_manager.add_section(
+                paper_id=paper_id,
+                section_title=section["section_title"],
+                content=section["content"],
+                page_number=section["page_number"],
+                embedding=dummy_embedding,
+            )
+            if section_id:
+                logger.debug(f"Stored section {i+1} (ID: {section_id}, Page: {section['page_number']})")
+            else:
+                logger.error(f"Failed to store section {i+1} for paper ID {paper_id}.")
+    else:
+        logger.warning("No sections extracted from PDF.")
+
+    # 4. Verify stored sections
+    stored_sections = db_manager.get_sections_for_paper(paper_id)
+    if stored_sections:
+        logger.info(f"\nRetrieved {len(stored_sections)} sections from DB for paper ID {paper_id}.")
+        for sec in stored_sections[:3]:  # Log first 3
+            logger.info(
+                f"  - Section ID: {sec['id']}, Title: {sec['section_title']}, Page: {sec['page_number']}, Content (first 100): {sec['content'][:100]}..."
+            )
+            if sec["embedding"] is not None:
+                logger.info(f"    Embedding shape: {sec['embedding'].shape}")
+            else:
+                logger.warning("    Embedding is None.")
+    else:
+        logger.warning(f"No sections retrieved from DB for paper ID {paper_id}.")
+
+    # 5. Add tags and references (re-using old test code for completeness, but focus is parser)
+    tag_ml_id = db_manager.add_tag("Machine Learning")
+    if paper_id and tag_ml_id:
+        db_manager.add_paper_tag(paper_id, tag_ml_id)
+    logger.info(f"Tags for paper {paper_id}: {[t['name'] for t in db_manager.get_tags_for_paper(paper_id)]}")
+
+    if paper_id:
+        db_manager.add_paper_reference(paper_id, "Foundational Algorithms", "Classic Author", 2000, "10.0000/classic.2000")
+        logger.info(
+            f"References for paper {paper_id}: {[r['cited_title'] for r in db_manager.get_paper_references_for_paper(paper_id)]}"
+        )
+
+    logger.info("\n--- DBManager and PDFParser tests completed. ---")
+
+    # --- Future: Initialize other modules ---
+    # from embeddings.embedding_model import EmbeddingModel
+    # from rag.retriever import Retriever
+    # from llm.llm_interface import LLMInterface
+    # from management.paper_manager import PaperManager
+    # from ui.cli import CLI
+
+    # db_manager = DBManager() # Already initialized
+    # pdf_parser = PDFParser() # Already initialized
+    # embedding_model = EmbeddingModel()
+    # retriever = Retriever(db_manager, embedding_model)
+    # llm_interface = LLMInterface()
+    # paper_manager = PaperManager(db_manager, pdf_parser, embedding_model, retriever, llm_interface)
+    # cli = CLI(paper_manager)
+
+    # --- Start the CLI ---
+    # cli.run()
 
     logger.info("Paper Agent started successfully. (CLI not yet implemented)")
 
