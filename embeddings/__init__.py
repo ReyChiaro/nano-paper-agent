@@ -1,1 +1,1 @@
-from .embedding_models import EmbeddingModel
+from .embedding_model import EmbeddingModel
