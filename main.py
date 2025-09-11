@@ -5,8 +5,9 @@ from utils.config import config
 from utils.logger import logger
 from database.db_manager import DBManager
 from parsers.pdf_parser import PDFParser
-from llm.llm_interface import LLMInterface  # Import LLMInterface
-import numpy as np
+from llm.llm_interface import LLMInterface
+from embeddings.embedding_model import EmbeddingModel  # Import EmbeddingModel
+import numpy as np  # Still need numpy for handling embeddings
 import sys
 
 
@@ -27,9 +28,17 @@ def main():
     logger.info(f"Database directory: {db_dir}")
     logger.info(f"Database name: {config.get('DATABASE_NAME')}")
 
-    # --- Initialize LLMInterface for common use ---
+    # --- Initialize LLMInterface ---
     llm_interface = LLMInterface()
     logger.info("LLMInterface initialized.")
+
+    # --- Initialize EmbeddingModel ---
+    try:
+        embedding_model = EmbeddingModel()
+        logger.info("EmbeddingModel initialized successfully.")
+    except Exception as e:
+        logger.critical(f"Failed to initialize EmbeddingModel: {e}", exc_info=True)
+        sys.exit("Application startup failed due to embedding model error.")
 
     # --- Initialize DBManager ---
     try:
@@ -50,8 +59,8 @@ def main():
         logger.error(f"Test PDF not found at {test_pdf_path}. Please place a dummy PDF there to proceed.")
         sys.exit("Missing test PDF. Cannot proceed with parser testing.")
 
-    # --- Basic DBManager and PDFParser Test ---
-    logger.info("\n--- Testing DBManager and LLM-Enhanced PDFParser operations ---")
+    # --- Basic DBManager and LLM-Enhanced PDFParser Test ---
+    logger.info("\n--- Testing DBManager, LLM-Enhanced PDFParser, and EmbeddingModel operations ---")
 
     # Clean up previous test data if any, for a fresh run
     if os.path.exists(db_manager.db_path):
@@ -73,10 +82,6 @@ def main():
     paper_abstract = llm_extracted_metadata.get("abstract", "No abstract extracted.")
     paper_abstract_summary = llm_extracted_metadata.get("abstract_summary", "No abstract summary.")
 
-    # Note: LLM might not easily extract publication_year, doi, url from generic text.
-    # For now, we'll hardcode or leave them as None unless the LLM is prompted specifically.
-    # A more advanced system might use cross-referencing with external APIs (e.g., Semantic Scholar)
-    # based on the LLM-extracted title/authors.
     paper_year = 2023  # Placeholder for now
 
     paper_id = db_manager.add_paper(
@@ -85,8 +90,6 @@ def main():
         publication_year=paper_year,
         abstract=paper_abstract,
         file_path=test_pdf_path,
-        # doi="10.1234/sample.2023.1", # If LLM could extract this
-        # url="http://example.com/sample_paper" # If LLM could extract this
     )
     if paper_id:
         logger.info(f"Test Paper added with ID: {paper_id} using LLM-extracted metadata.")
@@ -95,29 +98,48 @@ def main():
         logger.error("Failed to add Test Paper.")
         sys.exit("Failed to add paper to DB, cannot proceed.")
 
-    # 2. Extract sections and store them in the database
-    logger.info("\n--- Extracting and Storing Sections ---")
+    # 2. Extract sections and store them in the database with real embeddings
+    logger.info("\n--- Extracting and Storing Sections with Embeddings ---")
     sections_data = pdf_parser.extract_sections_from_pdf(test_pdf_path, chunk_size=500, overlap=100)
     if sections_data:
         logger.info(f"Extracted {len(sections_data)} sections from PDF.")
-        dummy_embedding_dim = 768
-        for i, section in enumerate(sections_data):
-            dummy_embedding = np.random.rand(dummy_embedding_dim).astype(np.float32)
-            section_id = db_manager.add_section(
-                paper_id=paper_id,
-                section_title=section["section_title"],
-                content=section["content"],
-                page_number=section["page_number"],
-                embedding=dummy_embedding,
-            )
-            if section_id:
-                logger.debug(f"Stored section {i+1} (ID: {section_id}, Page: {section['page_number']})")
-            else:
-                logger.error(f"Failed to store section {i+1} for paper ID {paper_id}.")
+
+        # Get all content for batch embedding
+        section_contents = [sec["content"] for sec in sections_data]
+
+        # Generate embeddings in a batch for efficiency
+        logger.info(f"Generating {len(section_contents)} embeddings in batch...")
+        embeddings = embedding_model.get_embedding(section_contents)
+
+        if embeddings is not None and embeddings.shape[0] == len(sections_data):
+            logger.info(f"Embeddings generated with shape: {embeddings.shape}")
+            for i, section in enumerate(sections_data):
+                section_id = db_manager.add_section(
+                    paper_id=paper_id,
+                    section_title=section["section_title"],
+                    content=section["content"],
+                    page_number=section["page_number"],
+                    embedding=embeddings[i],  # Use the actual embedding
+                )
+                if section_id:
+                    logger.debug(f"Stored section {i+1} (ID: {section_id}, Page: {section['page_number']}) with embedding.")
+                else:
+                    logger.error(f"Failed to store section {i+1} for paper ID {paper_id}.")
+        else:
+            logger.error("Failed to generate or match embeddings for all sections. Storing sections without embeddings.")
+            # Fallback: store sections without embeddings if embedding generation fails
+            for i, section in enumerate(sections_data):
+                section_id = db_manager.add_section(
+                    paper_id=paper_id,
+                    section_title=section["section_title"],
+                    content=section["content"],
+                    page_number=section["page_number"],
+                    embedding=None,
+                )
     else:
         logger.warning("No sections extracted from PDF.")
 
-    # 3. Verify stored sections
+    # 3. Verify stored sections and their embeddings
     stored_sections = db_manager.get_sections_for_paper(paper_id)
     if stored_sections:
         logger.info(f"\nRetrieved {len(stored_sections)} sections from DB for paper ID {paper_id}.")
@@ -126,7 +148,9 @@ def main():
                 f"  - Section ID: {sec['id']}, Title: {sec['section_title']}, Page: {sec['page_number']}, Content (first 100): {sec['content'][:100]}..."
             )
             if sec["embedding"] is not None:
-                logger.info(f"    Embedding shape: {sec['embedding'].shape}")
+                logger.info(f"    Embedding shape: {sec['embedding'].shape}, Type: {type(sec['embedding'])}")
+                # Verify it's a numpy array, not just a BLOB
+                assert isinstance(sec["embedding"], np.ndarray), "Embedding not converted back to numpy array!"
             else:
                 logger.warning("    Embedding is None.")
     else:
@@ -144,7 +168,7 @@ def main():
             f"References for paper {paper_id}: {[r['cited_title'] for r in db_manager.get_paper_references_for_paper(paper_id)]}"
         )
 
-    logger.info("\n--- DBManager and LLM-Enhanced PDFParser tests completed. ---")
+    logger.info("\n--- All core component tests completed. ---")
 
     logger.info("Paper Agent started successfully. (CLI not yet implemented)")
 
