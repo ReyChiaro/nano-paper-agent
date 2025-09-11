@@ -4,9 +4,10 @@ import os
 from utils.config import config
 from utils.logger import logger
 from database.db_manager import DBManager
-from parsers.pdf_parser import PDFParser  # Import the new PDFParser
-import numpy as np  # For testing embeddings
-import sys  # For exiting if no test PDF
+from parsers.pdf_parser import PDFParser
+from llm.llm_interface import LLMInterface  # Import LLMInterface
+import numpy as np
+import sys
 
 
 def main():
@@ -26,6 +27,10 @@ def main():
     logger.info(f"Database directory: {db_dir}")
     logger.info(f"Database name: {config.get('DATABASE_NAME')}")
 
+    # --- Initialize LLMInterface for common use ---
+    llm_interface = LLMInterface()
+    logger.info("LLMInterface initialized.")
+
     # --- Initialize DBManager ---
     try:
         db_manager = DBManager()
@@ -34,8 +39,8 @@ def main():
         logger.critical(f"Failed to initialize DBManager: {e}", exc_info=True)
         sys.exit("Application startup failed due to database error.")
 
-    # --- Initialize PDFParser ---
-    pdf_parser = PDFParser()
+    # --- Initialize PDFParser (now requires LLMInterface) ---
+    pdf_parser = PDFParser(llm_interface)
     logger.info("PDFParser initialized successfully.")
 
     # --- Prepare a dummy PDF for testing ---
@@ -46,20 +51,33 @@ def main():
         sys.exit("Missing test PDF. Cannot proceed with parser testing.")
 
     # --- Basic DBManager and PDFParser Test ---
-    logger.info("\n--- Testing DBManager and PDFParser operations ---")
+    logger.info("\n--- Testing DBManager and LLM-Enhanced PDFParser operations ---")
 
     # Clean up previous test data if any, for a fresh run
-    # (In a real app, you'd have proper data management, not just deleting the DB)
     if os.path.exists(db_manager.db_path):
         os.remove(db_manager.db_path)
         logger.info(f"Removed existing database file: {db_manager.db_path}")
         db_manager._initialize_db()  # Re-initialize after deletion
 
-    # 1. Add a paper (using test PDF path)
-    paper_title = "Sample Research Paper on AI"
-    paper_authors = "A. Researcher, B. Developer"
-    paper_year = 2023
-    paper_abstract = "This is a sample abstract for a research paper, demonstrating the capabilities of the PDF parser."
+    # 1. Extract metadata using LLM
+    logger.info(f"\n--- Extracting metadata from {test_pdf_path} using LLM ---")
+    llm_extracted_metadata = pdf_parser.extract_metadata_with_llm(test_pdf_path)
+
+    if not llm_extracted_metadata:
+        logger.error("Failed to extract metadata using LLM. Cannot add paper to DB. Exiting test.")
+        sys.exit("LLM metadata extraction failed.")
+
+    # Use extracted metadata to add paper
+    paper_title = llm_extracted_metadata.get("title", "Untitled Paper")
+    paper_authors = llm_extracted_metadata.get("authors", "Unknown Authors")
+    paper_abstract = llm_extracted_metadata.get("abstract", "No abstract extracted.")
+    paper_abstract_summary = llm_extracted_metadata.get("abstract_summary", "No abstract summary.")
+
+    # Note: LLM might not easily extract publication_year, doi, url from generic text.
+    # For now, we'll hardcode or leave them as None unless the LLM is prompted specifically.
+    # A more advanced system might use cross-referencing with external APIs (e.g., Semantic Scholar)
+    # based on the LLM-extracted title/authors.
+    paper_year = 2023  # Placeholder for now
 
     paper_id = db_manager.add_paper(
         title=paper_title,
@@ -67,41 +85,23 @@ def main():
         publication_year=paper_year,
         abstract=paper_abstract,
         file_path=test_pdf_path,
-        doi="10.1234/sample.2023.1",
+        # doi="10.1234/sample.2023.1", # If LLM could extract this
+        # url="http://example.com/sample_paper" # If LLM could extract this
     )
     if paper_id:
-        logger.info(f"Test Paper added with ID: {paper_id}")
+        logger.info(f"Test Paper added with ID: {paper_id} using LLM-extracted metadata.")
+        logger.info(f"LLM Abstract Summary: {paper_abstract_summary}")
     else:
         logger.error("Failed to add Test Paper.")
         sys.exit("Failed to add paper to DB, cannot proceed.")
 
-    # 2. Extract metadata and text from the test PDF
-    logger.info(f"\n--- Parsing PDF: {test_pdf_path} ---")
-    metadata = pdf_parser.extract_metadata_from_pdf(test_pdf_path)
-    logger.info(f"Extracted Metadata: {metadata}")
-
-    # Optional: Update paper title/authors from PDF metadata if more accurate
-    # For now, we'll stick to what we manually provided in add_paper for simplicity
-    # if metadata.get('title'):
-    #     # A method to update paper metadata would be needed here
-    #     pass
-
-    full_text_content = pdf_parser.extract_text_from_pdf(test_pdf_path)
-    if full_text_content:
-        logger.info(f"Extracted {len(full_text_content)} characters of full text.")
-        # logger.debug(f"Full text (first 500 chars): {full_text_content[:500]}...")
-    else:
-        logger.warning(f"Could not extract full text from {test_pdf_path}.")
-
-    # 3. Extract sections and store them in the database
+    # 2. Extract sections and store them in the database
     logger.info("\n--- Extracting and Storing Sections ---")
     sections_data = pdf_parser.extract_sections_from_pdf(test_pdf_path, chunk_size=500, overlap=100)
     if sections_data:
         logger.info(f"Extracted {len(sections_data)} sections from PDF.")
-        # For testing, let's add a dummy embedding
-        dummy_embedding_dim = 768  # Standard for many sentence transformers
+        dummy_embedding_dim = 768
         for i, section in enumerate(sections_data):
-            # Simulate embedding generation (will be real in next step)
             dummy_embedding = np.random.rand(dummy_embedding_dim).astype(np.float32)
             section_id = db_manager.add_section(
                 paper_id=paper_id,
@@ -117,7 +117,7 @@ def main():
     else:
         logger.warning("No sections extracted from PDF.")
 
-    # 4. Verify stored sections
+    # 3. Verify stored sections
     stored_sections = db_manager.get_sections_for_paper(paper_id)
     if stored_sections:
         logger.info(f"\nRetrieved {len(stored_sections)} sections from DB for paper ID {paper_id}.")
@@ -132,7 +132,7 @@ def main():
     else:
         logger.warning(f"No sections retrieved from DB for paper ID {paper_id}.")
 
-    # 5. Add tags and references (re-using old test code for completeness, but focus is parser)
+    # 4. Add tags and references (re-using old test code for completeness)
     tag_ml_id = db_manager.add_tag("Machine Learning")
     if paper_id and tag_ml_id:
         db_manager.add_paper_tag(paper_id, tag_ml_id)
@@ -144,25 +144,7 @@ def main():
             f"References for paper {paper_id}: {[r['cited_title'] for r in db_manager.get_paper_references_for_paper(paper_id)]}"
         )
 
-    logger.info("\n--- DBManager and PDFParser tests completed. ---")
-
-    # --- Future: Initialize other modules ---
-    # from embeddings.embedding_model import EmbeddingModel
-    # from rag.retriever import Retriever
-    # from llm.llm_interface import LLMInterface
-    # from management.paper_manager import PaperManager
-    # from ui.cli import CLI
-
-    # db_manager = DBManager() # Already initialized
-    # pdf_parser = PDFParser() # Already initialized
-    # embedding_model = EmbeddingModel()
-    # retriever = Retriever(db_manager, embedding_model)
-    # llm_interface = LLMInterface()
-    # paper_manager = PaperManager(db_manager, pdf_parser, embedding_model, retriever, llm_interface)
-    # cli = CLI(paper_manager)
-
-    # --- Start the CLI ---
-    # cli.run()
+    logger.info("\n--- DBManager and LLM-Enhanced PDFParser tests completed. ---")
 
     logger.info("Paper Agent started successfully. (CLI not yet implemented)")
 

@@ -3,18 +3,23 @@
 from pypdf import PdfReader
 import os
 from typing import List, Dict, Any, Optional
+import json
 
 from utils.logger import logger
+
+# Import LLMInterface
+from llm.llm_interface import LLMInterface
 
 
 class PDFParser:
     """
     A class for parsing PDF files, extracting text content, and metadata.
-    Uses the pypdf library.
+    Uses the pypdf library and leverages an LLM for enhanced metadata extraction.
     """
 
-    def __init__(self):
-        logger.info("PDFParser initialized.")
+    def __init__(self, llm_interface: LLMInterface):
+        self.llm = llm_interface
+        logger.info("PDFParser initialized with LLM support.")
 
     def _get_pdf_reader(self, pdf_path: str) -> Optional[PdfReader]:
         """
@@ -47,9 +52,35 @@ class PDFParser:
             logger.error(f"Error extracting text from PDF '{pdf_path}': {e}")
             return None
 
+    def extract_text_from_page_range(self, pdf_path: str, start_page: int = 1, end_page: int = 2) -> Optional[str]:
+        """
+        Extracts text content from a specific range of pages (1-indexed).
+        Useful for feeding initial pages to an LLM for metadata extraction.
+        """
+        reader = self._get_pdf_reader(pdf_path)
+        if not reader:
+            return None
+
+        extracted_text = []
+        try:
+            # Adjust to 0-indexed for pypdf
+            start_idx = max(0, start_page - 1)
+            end_idx = min(len(reader.pages), end_page)
+
+            for i in range(start_idx, end_idx):
+                page = reader.pages[i]
+                text = page.extract_text()
+                if text:
+                    extracted_text.append(text)
+            return "\n".join(extracted_text)
+        except Exception as e:
+            logger.error(f"Error extracting text from page range {start_page}-{end_page} of PDF '{pdf_path}': {e}")
+            return None
+
     def extract_metadata_from_pdf(self, pdf_path: str) -> Dict[str, Any]:
         """
-        Extracts basic metadata (like title, author) from a PDF file.
+        Extracts basic metadata (like title, author) from a PDF file using pypdf's built-in capabilities.
+        This serves as a fallback or initial quick check.
         Returns a dictionary with metadata.
         """
         reader = self._get_pdf_reader(pdf_path)
@@ -67,6 +98,48 @@ class PDFParser:
             "keywords": metadata.get("/Keywords"),
             # Add more fields as needed
         }
+
+    def extract_metadata_with_llm(self, pdf_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Extracts structured metadata (title, authors, abstract, abstract summary)
+        from the first few pages of a PDF using an LLM.
+        """
+        # Extract text from the first two pages
+        context_text = self.extract_text_from_page_range(pdf_path, start_page=1, end_page=2)
+        if not context_text:
+            logger.error(f"Could not extract text from first two pages of {pdf_path} for LLM metadata extraction.")
+            return None
+
+        prompt = f"""
+        You are an expert in academic paper analysis. Your task is to extract key metadata from the provided text, which typically comes from the first few pages of a research paper.
+        Identify the paper's title, a comma-separated list of authors, the full abstract, and a very short (1-2 sentences) summary of the abstract.
+        Return the information in a JSON object with the following keys:
+        - "title": (string) The full title of the paper.
+        - "authors": (string) A comma-separated list of all authors.
+        - "abstract": (string) The complete abstract of the paper.
+        - "abstract_summary": (string) A concise, 1-2 sentence summary of the abstract.
+
+        If any piece of information is not clearly present in the text, use "N/A" for that field.
+
+        Paper Text:
+        ---
+        {context_text[:4000]} # Limit input to LLM to avoid very long contexts
+        ---
+        """
+        # Using generate_json for structured output
+        extracted_data = self.llm.generate_json(prompt)
+
+        if extracted_data:
+            # Clean up common LLM artifacts or formatting issues
+            for key in ["title", "authors", "abstract", "abstract_summary"]:
+                if extracted_data.get(key) and isinstance(extracted_data[key], str):
+                    extracted_data[key] = extracted_data[key].strip()
+
+            logger.info(f"LLM successfully extracted metadata for '{extracted_data.get('title', 'N/A')}'")
+            return extracted_data
+        else:
+            logger.error(f"LLM failed to extract metadata for {pdf_path}.")
+            return None
 
     def extract_sections_from_pdf(self, pdf_path: str, chunk_size: int = 1000, overlap: int = 200) -> List[Dict[str, Any]]:
         """
@@ -125,7 +198,7 @@ class PDFParser:
         return sections
 
 
-# For testing purposes
+# For testing purposes (updated to reflect LLM integration)
 if __name__ == "__main__":
     from utils.config import config
     from utils.logger import logger
@@ -142,7 +215,9 @@ if __name__ == "__main__":
         logger.warning("You can create a simple PDF with some text using a word processor and save it.")
         sys.exit("Please provide a test PDF to run the parser test.")
 
-    parser = PDFParser()
+    # Initialize LLMInterface for the parser
+    llm_interface_test = LLMInterface()
+    parser = PDFParser(llm_interface_test)
 
     print(f"\n--- Testing PDF Text Extraction: {test_pdf_path} ---")
     full_text = parser.extract_text_from_pdf(test_pdf_path)
@@ -154,13 +229,21 @@ if __name__ == "__main__":
     else:
         print("Failed to extract full text.")
 
-    print("\n--- Testing PDF Metadata Extraction ---")
-    metadata = parser.extract_metadata_from_pdf(test_pdf_path)
-    if metadata:
-        for key, value in metadata.items():
-            print(f"{key}: {value}")
+    print("\n--- Testing PDF Metadata Extraction (pypdf's built-in) ---")
+    metadata_pypdf = parser.extract_metadata_from_pdf(test_pdf_path)
+    if metadata_pypdf:
+        for key, value in metadata_pypdf.items():
+            print(f"pypdf - {key}: {value}")
     else:
-        print("Failed to extract metadata.")
+        print("Failed to extract metadata using pypdf.")
+
+    print("\n--- Testing PDF Metadata Extraction (LLM-Enhanced) ---")
+    metadata_llm = parser.extract_metadata_with_llm(test_pdf_path)
+    if metadata_llm:
+        for key, value in metadata_llm.items():
+            print(f"LLM - {key}: {value}")
+    else:
+        print("Failed to extract metadata using LLM.")
 
     print("\n--- Testing PDF Section Extraction (Simple Chunking) ---")
     sections = parser.extract_sections_from_pdf(test_pdf_path, chunk_size=500, overlap=100)
