@@ -9,5 +9,9 @@
     "LLM_MODEL_NAME": "gpt-4o-mini",
     "LOG_LEVEL": "INFO",
     "LOG_FILE": "/Users/mecreative/Documents/projects/paper_agent/paper_agent.log",
-    "TEST_KEY": "test_value"
+    "TEST_KEY": "test_value",
+    "PDF_CHUNK_SIZE": 1000,
+    "PDF_CHUNK_OVERLAP": 200,
+    "LLM_MAX_CONTEXT_CHARS_FOR_SUMMARY": 10000,
+    "LLM_MAX_TOKENS_FOR_SUMMARY": 750
 }
