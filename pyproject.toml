@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=2.3.3",
+    "openai>=1.107.2",
     "pypdf>=6.0.0",
+    "scikit-learn>=1.7.2",
     "sentence-transformers>=5.1.0",
 ]

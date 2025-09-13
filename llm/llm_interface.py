@@ -1,5 +1,6 @@
 # paper_agent/llm/llm_interface.py
 
+from openai import Client
 from typing import Dict, Any, Optional
 from utils.logger import logger
 from utils.config import config
@@ -15,6 +16,7 @@ class LLMInterface:
 
     def __init__(self):
         self.api_key = config.get("LLM_API_KEY")
+        self.base_url = config.get("BASE_URL")
         self.model_name = config.get("LLM_MODEL_NAME")
         if self.api_key == "YOUR_OPENAI_API_KEY_OR_OTHER_LLM_KEY":
             logger.warning("LLM_API_KEY is not set in config.json. LLM calls will be simulated.")
@@ -23,6 +25,7 @@ class LLMInterface:
             self.simulate_mode = False
             # In a real scenario, initialize the LLM client here
             # e.g., self.client = OpenAI(api_key=self.api_key)
+            self.client = Client(api_key=self.api_key, base_url=self.base_url)
             logger.info(f"LLMInterface initialized with model: {self.model_name}")
 
     def generate_text(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7) -> Optional[str]:
@@ -49,25 +52,27 @@ class LLMInterface:
         else:
             # --- REAL LLM API CALL WOULD GO HERE ---
             # Example for OpenAI:
-            # try:
-            #     response = self.client.chat.completions.create(
-            #         model=self.model_name,
-            #         messages=[
-            #             {"role": "system", "content": "You are a helpful assistant."},
-            #             {"role": "user", "content": prompt}
-            #         ],
-            #         max_tokens=max_tokens,
-            #         temperature=temperature,
-            #         response_format={"type": "json_object"} if "json" in prompt.lower() else {"type": "text"}
-            #     )
-            #     return response.choices[0].message.content
-            # except Exception as e:
-            #     logger.error(f"Error calling LLM API: {e}")
-            #     return None
-            logger.warning(
-                "LLM API key is set, but actual API call is not implemented yet in LLMInterface. Simulating response."
-            )
-            return self.generate_text(prompt, max_tokens, temperature)  # Fallback to simulation
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    response_format={"type": "json_object"} if "json" in prompt.lower() else {"type": "text"},
+                    extra_body={"enable_thinking": False},
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                logger.error(f"Error calling LLM API: {e}")
+                return None
+            # logger.warning(
+            #     "LLM API key is set, but actual API call is not implemented yet in LLMInterface. Simulating response."
+            # )
+            # self.simulate_mode = True
+            # return self.generate_text(prompt, max_tokens, temperature)  # Fallback to simulation
 
     def generate_json(
         self, prompt: str, schema: Optional[Dict] = None, max_tokens: int = 1000, temperature: float = 0.7

@@ -12,7 +12,8 @@ class Config:
 
     _instance = None
     _config_data = {}
-    _config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+    _config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+    # _config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
 
     def __new__(cls):
         if cls._instance is None:
